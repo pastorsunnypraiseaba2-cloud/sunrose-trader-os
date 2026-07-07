@@ -687,6 +687,17 @@ textarea { resize: vertical; min-height: 70px; }
     <div class="bias-row"><span class="bias-row-label">Virgin CPR Nearby</span><span class="tag tag-dim" id="dc-vcpr">—</span></div>
   </div>
 
+  <!-- SYSTEM CHECK -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title card-title-gold">System Check</div>
+      <span id="brain-sys-status" style="font-family:var(--font-mono);font-size:9px;font-weight:700;color:var(--t3);">NOT RUN</span>
+    </div>
+    <div id="brain-sys-check">
+      <div style="text-align:center;padding:16px;font-size:11px;color:var(--t3);">Fetch market data to run system check</div>
+    </div>
+  </div>
+
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
     <button class="btn btn-gold" onclick="goTo('cpr')">Fetch Data</button>
     <button class="btn btn-outline" onclick="goTo('mentor')">Mentor Briefing</button>
@@ -1667,8 +1678,8 @@ S.daily = dailyCPR;
 S.prevDaily = pinned.prevDaily || dailyCPR;
 var weekValues = weekData.values || [];
 var weeklyCPR, weeklyValidation;
-if (weekValues.length >= 1) {
-var wPrev = weekValues[0]; 
+if (weekValues.length >= 2) {
+var wPrev = weekValues[1]; // Weekly: skip [0] (this week, in-progress), use [1] (last completed week)
 var wPrevKey = wPrev.datetime.substring(0,10);
 var wH = parseFloat(wPrev.high), wL = parseFloat(wPrev.low), wC = parseFloat(wPrev.close);
 if (pinned.weekKey === wPrevKey && pinned.weekly) {
@@ -1684,13 +1695,13 @@ pinned.weeklyRaw = { H: wH, L: wL, C: wC, date: wPrevKey };
 }
 }
 } else {
-weeklyValidation = { valid: false, errors: ['Not enough weekly candle data (need at least 2 candles)'], label: 'Weekly' };
+weeklyValidation = { valid: false, errors: ['Not enough weekly candle data (need at least 2 completed candles)'], label: 'Weekly' };
 }
 S.weekly = weeklyValidation.valid ? weeklyCPR : null;
 var monthValues = monthData.values || [];
 var monthlyCPR, monthlyValidation;
-if (monthValues.length >= 1) {
-var mPrev = monthValues[0]; 
+if (monthValues.length >= 2) {
+var mPrev = monthValues[1]; // Monthly: skip [0] (this month, in-progress), use [1] (last completed month)
 var mPrevKey = mPrev.datetime.substring(0,10);
 var mH = parseFloat(mPrev.high), mL = parseFloat(mPrev.low), mC = parseFloat(mPrev.close);
 if (pinned.monthKey === mPrevKey && pinned.monthly) {
@@ -1706,7 +1717,7 @@ pinned.monthlyRaw = { H: mH, L: mL, C: mC, date: mPrevKey };
 }
 }
 } else {
-monthlyValidation = { valid: false, errors: ['Not enough monthly candle data (need at least 2 candles)'], label: 'Monthly' };
+monthlyValidation = { valid: false, errors: ['Not enough monthly candle data (need at least 2 completed candles)'], label: 'Monthly' };
 }
 S.monthly = monthlyValidation.valid ? monthlyCPR : null;
 persist('sros_cpr_pinned_' + symLabel, pinned);
@@ -2900,15 +2911,18 @@ el.innerHTML = html;
 function generateLocalPlan() {
 var b = S.bias;
 var price = S.price;
-var direction = b.alignment && b.alignment.indexOf('BULL') >= 0 ? 'BULLISH' : b.alignment && b.alignment.indexOf('BEAR') >= 0 ? 'BEARISH' : 'NEUTRAL';
+// Read direction from Brain -- single source of truth
+var direction = S.brain && S.brain.verdict !== 'NO DATA'
+? (S.brain.direction === 'BUY' ? 'BULLISH' : S.brain.direction === 'SELL' ? 'BEARISH' : 'NEUTRAL')
+: (b.alignment && b.alignment.indexOf('BULL') >= 0 ? 'BULLISH' : b.alignment && b.alignment.indexOf('BEAR') >= 0 ? 'BEARISH' : 'NEUTRAL');
 var dTC = fmt(S.daily && S.daily.TC), dBC = fmt(S.daily && S.daily.BC), dP = fmt(S.daily && S.daily.P);
 var wBC = fmt(S.weekly && S.weekly.BC), mBC = fmt(S.monthly && S.monthly.BC);
 var swept = S.liquidity.bsl.concat(S.liquidity.ssl).some(function(l) { return l.status === 'swept'; });
 var kz = getCurrentKZ();
 return {
-mission: direction === 'BULLISH' ? 'Buy only. Wait for SSL sweep, bullish CHoCH on 15m, and retracement into a valid OB or FVG before entry.'
-: direction === 'BEARISH' ? 'Sell only. Wait for BSL sweep, bearish CHoCH on 15m, and retracement into a valid OB or FVG before entry.'
-: 'No directional bias. Wait for CPR alignment before considering any trade today.',
+mission: direction === 'BULLISH' ? 'BUY only. Wait for SSL sweep, bullish CHoCH on 15m, entry at OB or FVG. Reject every sell setup.'
+: direction === 'BEARISH' ? 'SELL only. Wait for BSL sweep, bearish CHoCH on 15m, entry at OB or FVG. Reject every buy setup.'
+: 'NO TRADE. Timeframes conflict. Constitution prohibits trading without alignment. Observe and wait.',
 biasVerdict: direction,
 narrative: getSymLabel() + ' is currently trading at $' + (price ? price.toFixed(2) : '--') + ' with ' + (b.alignment || 'unclear').replace('_', ' ') + ' bias across all three CPR timeframes. The daily CPR band sits between ' + dBC + ' and ' + dTC + ' with the pivot at ' + dP + '. ' + (direction === 'BEARISH' ? 'Price is below the daily BC, confirming bearish pressure. The weekly structure also supports selling, with price trading below the weekly BC at ' + wBC + '.' : direction === 'BULLISH' ? 'Price is above the daily TC, confirming bullish momentum.' : 'Price is inside the CPR band -- a neutral zone.') + ' ' + (swept ? 'Liquidity has been swept -- focus on structure confirmation.' : 'Liquidity has not yet been swept -- the move that creates the opportunity has not happened yet.'),
 keyLevels: [
@@ -2933,13 +2947,9 @@ whatToWatch: [
 { title: 'Liquidity Sweep Event', desc: 'Watch for a sharp spike above or below a key level followed by rejection.' },
 { title: 'CHoCH on 15m After Sweep', desc: 'After the sweep, switch to the 15m chart. The first CHoCH is your confirmation.' }
 ],
-rulesForToday: [
-'Only take trades in the ' + (direction === 'BEARISH' ? 'SHORT' : 'LONG') + ' direction. Ignore every setup against the bias.',
-'No entry before a confirmed liquidity sweep (Article 2).',
-'No entry without CHoCH + BOS on 15m (Article 3).',
-'Enter only at a marked OB or FVG zone -- never chase price (Article 4).',
-'If no valid setup forms by London Close -- accept that today has no trade. Patience is the edge.'
-],
+rulesForToday: direction === 'NEUTRAL'
+? ['NO TRADE -- timeframes not aligned. Article 1 violated.','Do not trade any direction until CPR timeframes align.','Mark key levels and prepare for when alignment returns.','Patience is a trading edge (Article 9).','Check bias at each new session open.']
+: ['Only take ' + (direction === 'BEARISH' ? 'SHORT' : 'LONG') + ' trades. Reject every setup against the bias.','No entry before a confirmed liquidity sweep (Article 2).','No entry without CHoCH + BOS on 15m (Article 3).','Enter only at OB or FVG -- never chase price (Article 4).','If no valid setup by London Close -- no trade today. Patience is the edge.'],
 generatedAt: new Date().toLocaleString(),
 price: price
 };
@@ -4403,6 +4413,15 @@ var articles = [
 { num: 7, name: 'Capital Safety', pass: art7Pass, detail: art7Detail },
 { num: 8, name: 'All Rules Satisfied', pass: art8Pass, detail: art8Pass ? 'Constitution approves this trade' : mandatoryPassed + '/' + mandatoryTotal + ' mandatory articles satisfied' }
 ];
+// SYSTEM VERIFICATION
+var sysChecks = [
+{ label: 'Daily CPR', pass: !!(S.daily && S.daily.TC && S.daily.P && S.daily.BC), detail: S.daily ? 'TC:'+fmt(S.daily.TC)+' P:'+fmt(S.daily.P)+' BC:'+fmt(S.daily.BC) : 'Not loaded' },
+{ label: 'Weekly CPR', pass: !!(S.weekly && S.weekly.TC), detail: S.weekly ? 'TC:'+fmt(S.weekly.TC)+' P:'+fmt(S.weekly.P)+' BC:'+fmt(S.weekly.BC) : 'Not loaded' },
+{ label: 'Monthly CPR', pass: !!(S.monthly && S.monthly.TC), detail: S.monthly ? 'TC:'+fmt(S.monthly.TC)+' P:'+fmt(S.monthly.P)+' BC:'+fmt(S.monthly.BC) : 'Not loaded' },
+{ label: 'Live Price', pass: !!(S.price && S.price > 0), detail: S.price ? '$'+S.price.toFixed(2) : 'No price data' },
+{ label: 'Bias Engine', pass: !!(b.alignment), detail: b.alignment ? b.alignment.replace('_',' ') : 'Not calculated' }
+];
+var sysReady = sysChecks.every(function(c){return c.pass;});
 S.brain = {
 verdict: verdict,
 verdictColor: verdictColor,
@@ -4417,7 +4436,9 @@ mandatoryPassed: mandatoryPassed,
 mandatoryTotal: mandatoryTotal,
 insideZone: insideZone,
 kz: kz,
-lastUpdated: new Date().toLocaleTimeString()
+lastUpdated: new Date().toLocaleTimeString(),
+sysChecks: sysChecks,
+sysReady: sysReady
 };
 renderBrainDashboard();
 updateDashboardConditions();
@@ -4461,6 +4482,20 @@ dirEl.className = 'tag ' + (brain.direction === 'BUY' ? 'tag-bull' : brain.direc
 }
 var updEl = document.getElementById('brain-updated');
 if (updEl) updEl.textContent = 'Updated ' + brain.lastUpdated;
+// SYSTEM CHECK DISPLAY
+var sysEl = document.getElementById('brain-sys-check');
+if (sysEl && brain.sysChecks) {
+var sysHtml = '';
+brain.sysChecks.forEach(function(c) {
+sysHtml += '<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);">';
+sysHtml += '<div style="font-size:13px;">'+(c.pass?'\u2705':'\u274C')+'</div>';
+sysHtml += '<div style="flex:1;"><div style="font-size:12px;font-weight:600;color:'+(c.pass?'var(--t1)':'var(--bear)')+';">'+c.label+'</div>';
+sysHtml += '<div style="font-size:10px;color:var(--t3);">'+c.detail+'</div></div></div>';
+});
+sysEl.innerHTML = sysHtml;
+var sysStatusEl = document.getElementById('brain-sys-status');
+if (sysStatusEl) { sysStatusEl.textContent = brain.sysReady ? 'SYSTEM READY' : 'CHECK FAILED'; sysStatusEl.style.color = brain.sysReady ? 'var(--bull)' : 'var(--bear)'; }
+}
 var progEl = document.getElementById('brain-progress-fill');
 if (progEl) {
 progEl.style.width = brain.confidence + '%';

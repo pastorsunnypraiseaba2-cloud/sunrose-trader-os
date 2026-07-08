@@ -1782,9 +1782,17 @@ hourlyStatus: hDataEarly ? (hDataEarly.status || 'ok') : 'no response',
 hourlyError: hDataEarly && hDataEarly.message ? hDataEarly.message : null,
 sampleCandle: nyDailyCandles.length > 0 ? nyDailyCandles[0] : null
 };
+// A full NY trading day has ~23-24 hourly bars. If TwelveData's hourly feed has gaps,
+// a session can end up with very few bars, which corrupts High/Low (misses the real
+// intraday extremes). Only trust sessions with reasonable bar coverage.
+var MIN_BARS_FOR_TRUSTED_SESSION = 15;
+var reliableNyCandles = nyDailyCandles.filter(function(c) { return (c.barCount || 0) >= MIN_BARS_FOR_TRUSTED_SESSION; });
+S.nyCandleDebug.thinSessions = nyDailyCandles.filter(function(c) { return (c.barCount || 0) < MIN_BARS_FOR_TRUSTED_SESSION; }).map(function(c){ return c.datetime + ' (' + c.barCount + ' bars)'; });
+S.nyCandleDebug.reliableSessions = reliableNyCandles.length;
 // [0] = today's in-progress candle (TwelveData always puts current period first)
 // [1] = yesterday's COMPLETED candle = what we need for today's CPR
-var dayValues = (nyDailyCandles.length >= 3 ? nyDailyCandles : (dayData.values || []));
+var dayValues = (reliableNyCandles.length >= 3 ? reliableNyCandles : (dayData.values || []));
+S.nyCandleDebug.usedFallback = reliableNyCandles.length < 3;
 if (dayValues.length < 3) { setFetchBar('Not enough daily history. Try again in a moment.', 'err'); btn.disabled=false; btn.innerHTML='Fetch '+symLabel+' Data Now'; return; }
 var dPrev = dayValues[1]; // Yesterday's completed candle
 var dPrevKey = dPrev.datetime.substring(0,10);
@@ -1937,8 +1945,9 @@ if (S.nyCandleDebug) {
 var ncd = S.nyCandleDebug;
 html += '<div style="font-family:var(--font-mono);font-size:9px;color:'+(ncd.usedFallback ? 'var(--bear)' : 'var(--bull)')+';background:rgba(0,0,0,0.3);border-radius:6px;padding:8px 10px;margin-bottom:12px;line-height:1.6;">' +
 'NY CANDLE REBUILD: ' + (ncd.usedFallback ? 'FALLBACK USED (raw TwelveData daily)' : 'OK (self-built from hourly)') + '<br>' +
-'Hourly bars received: ' + ncd.hourlyBarsReceived + ' | NY sessions built: ' + ncd.nySessionsBuilt + '<br>' +
+'Hourly bars received: ' + ncd.hourlyBarsReceived + ' | NY sessions built: ' + ncd.nySessionsBuilt + ' | Reliable (15+ bars): ' + (ncd.reliableSessions != null ? ncd.reliableSessions : '--') + '<br>' +
 'Hourly fetch status: ' + ncd.hourlyStatus + (ncd.hourlyError ? ' -- ' + ncd.hourlyError : '') +
+(ncd.thinSessions && ncd.thinSessions.length ? '<br>Thin/rejected sessions: ' + ncd.thinSessions.join(', ') : '') +
 '</div>';
 }
 html += renderPeriod('MONTHLY CPR', d.monthly);

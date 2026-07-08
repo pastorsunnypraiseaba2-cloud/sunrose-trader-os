@@ -1774,6 +1774,14 @@ var keys = Object.keys(sessions).sort().reverse(); // newest first, matching Twe
 return keys.map(function(k) { return { datetime: k, high: sessions[k].high, low: sessions[k].low, close: sessions[k].close, open: sessions[k].open, barCount: sessions[k].count }; });
 }
 var nyDailyCandles = buildNYDailyCandles(hDataEarly && hDataEarly.values);
+S.nyCandleDebug = {
+hourlyBarsReceived: (hDataEarly && hDataEarly.values) ? hDataEarly.values.length : 0,
+nySessionsBuilt: nyDailyCandles.length,
+usedFallback: nyDailyCandles.length < 3,
+hourlyStatus: hDataEarly ? (hDataEarly.status || 'ok') : 'no response',
+hourlyError: hDataEarly && hDataEarly.message ? hDataEarly.message : null,
+sampleCandle: nyDailyCandles.length > 0 ? nyDailyCandles[0] : null
+};
 // [0] = today's in-progress candle (TwelveData always puts current period first)
 // [1] = yesterday's COMPLETED candle = what we need for today's CPR
 var dayValues = (nyDailyCandles.length >= 3 ? nyDailyCandles : (dayData.values || []));
@@ -1925,6 +1933,14 @@ return '<div style="background:var(--gold-dim);border:1px solid var(--gold-borde
 }
 var html = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--t3);margin-bottom:6px;">Fetched: '+d.fetchedAt+' | Symbol: '+d.symbol+'</div>';
 html += '<div style="font-family:var(--font-mono);font-size:10px;color:var(--gold);margin-bottom:12px;">Data Feed: TwelveData | Timezone: America/New_York (17:00 NY close)</div>';
+if (S.nyCandleDebug) {
+var ncd = S.nyCandleDebug;
+html += '<div style="font-family:var(--font-mono);font-size:9px;color:'+(ncd.usedFallback ? 'var(--bear)' : 'var(--bull)')+';background:rgba(0,0,0,0.3);border-radius:6px;padding:8px 10px;margin-bottom:12px;line-height:1.6;">' +
+'NY CANDLE REBUILD: ' + (ncd.usedFallback ? 'FALLBACK USED (raw TwelveData daily)' : 'OK (self-built from hourly)') + '<br>' +
+'Hourly bars received: ' + ncd.hourlyBarsReceived + ' | NY sessions built: ' + ncd.nySessionsBuilt + '<br>' +
+'Hourly fetch status: ' + ncd.hourlyStatus + (ncd.hourlyError ? ' -- ' + ncd.hourlyError : '') +
+'</div>';
+}
 html += renderPeriod('MONTHLY CPR', d.monthly);
 html += renderPeriod('WEEKLY CPR', d.weekly);
 html += renderPeriod('DAILY CPR', d.daily);

@@ -1799,7 +1799,7 @@ dailyValidation = validateCPR('Daily', dH, dL, dC, dailyCPR);
 if (dailyValidation.valid) {
 pinned.dayKey = dPrevKey;
 pinned.daily = dailyCPR;
-pinned.dailyRaw = { H: dH, L: dL, C: dC, date: dPrevKey };
+pinned.dailyRaw = { H: dH, L: dL, C: dC, date: dPrevKey, barCount: dPrev.barCount || null };
 pinned.prevDaily = pinned.prevDaily || calcCPR(parseFloat(dayValues[2].high), parseFloat(dayValues[2].low), parseFloat(dayValues[2].close));
 }
 }
@@ -1917,7 +1917,7 @@ return '<div style="background:var(--surface2);border:1px solid '+(val.valid?'va
 '<div style="font-family:var(--font-display);font-size:13px;font-weight:700;">'+label+'</div>' +
 '<span class="tag" style="background:transparent;color:'+statusColor+';font-weight:700;">'+statusText+'</span>' +
 '</div>' +
-(raw.date ? '<div style="font-family:var(--font-mono);font-size:10px;color:var(--t3);margin-bottom:8px;">Period: '+raw.date+' | Pinned: '+info.pinned+'</div>' : '') +
+(raw.date ? '<div style="font-family:var(--font-mono);font-size:10px;color:var(--t3);margin-bottom:8px;">Period: '+raw.date+' | Pinned: '+info.pinned+(raw.barCount ? ' | Hourly bars used: '+raw.barCount : '')+'</div>' : '') +
 '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:8px;">' +
 ['High:'+fmt(raw.H), 'Low:'+fmt(raw.L), 'Close:'+fmt(raw.C)].map(function(s){
 return '<div style="background:var(--surface3);border-radius:4px;padding:6px;text-align:center;font-family:var(--font-mono);font-size:11px;">'+s+'</div>';

@@ -1783,16 +1783,28 @@ hourlyError: hDataEarly && hDataEarly.message ? hDataEarly.message : null,
 sampleCandle: nyDailyCandles.length > 0 ? nyDailyCandles[0] : null
 };
 // A full NY trading day has ~23-24 hourly bars. If TwelveData's hourly feed has gaps,
-// a session can end up with very few bars, which corrupts High/Low (misses the real
-// intraday extremes). Only trust sessions with reasonable bar coverage.
+// a completed day can end up with very few bars, corrupting High/Low (missing the real
+// intraday extremes). Today's candle (index 0) is naturally thin since it's in progress --
+// that's expected and NOT a data gap, so we must not filter it out. Instead, we keep the
+// full candle list intact and search backward through COMPLETED days (index 1+) to find
+// the most recent one with reliable bar coverage.
 var MIN_BARS_FOR_TRUSTED_SESSION = 15;
-var reliableNyCandles = nyDailyCandles.filter(function(c) { return (c.barCount || 0) >= MIN_BARS_FOR_TRUSTED_SESSION; });
-S.nyCandleDebug.thinSessions = nyDailyCandles.filter(function(c) { return (c.barCount || 0) < MIN_BARS_FOR_TRUSTED_SESSION; }).map(function(c){ return c.datetime + ' (' + c.barCount + ' bars)'; });
-S.nyCandleDebug.reliableSessions = reliableNyCandles.length;
+var todayInProgress = nyDailyCandles.length > 0 ? nyDailyCandles[0] : null;
+var completedCandles = nyDailyCandles.slice(1);
+var mostRecentReliableIdx = completedCandles.findIndex(function(c) { return (c.barCount || 0) >= MIN_BARS_FOR_TRUSTED_SESSION; });
+S.nyCandleDebug.thinSessions = nyDailyCandles.filter(function(c, i) { return i > 0 && (c.barCount || 0) < MIN_BARS_FOR_TRUSTED_SESSION; }).map(function(c){ return c.datetime + ' (' + c.barCount + ' bars)'; });
+S.nyCandleDebug.reliableSessions = completedCandles.filter(function(c) { return (c.barCount || 0) >= MIN_BARS_FOR_TRUSTED_SESSION; }).length;
+var reliableNyCandles = null;
+if (todayInProgress && mostRecentReliableIdx !== -1) {
+// Rebuild the array starting from today, then the most recent RELIABLE completed day onward,
+// so dayValues[1] lands on a trustworthy candle instead of a gappy one.
+reliableNyCandles = [todayInProgress].concat(completedCandles.slice(mostRecentReliableIdx));
+}
 // [0] = today's in-progress candle (TwelveData always puts current period first)
 // [1] = yesterday's COMPLETED candle = what we need for today's CPR
-var dayValues = (reliableNyCandles.length >= 3 ? reliableNyCandles : (dayData.values || []));
-S.nyCandleDebug.usedFallback = reliableNyCandles.length < 3;
+var dayValues = (reliableNyCandles && reliableNyCandles.length >= 3) ? reliableNyCandles : (dayData.values || []);
+S.nyCandleDebug.usedFallback = !(reliableNyCandles && reliableNyCandles.length >= 3);
+S.nyCandleDebug.skippedThinDays = mostRecentReliableIdx > 0 ? mostRecentReliableIdx : 0;
 if (dayValues.length < 3) { setFetchBar('Not enough daily history. Try again in a moment.', 'err'); btn.disabled=false; btn.innerHTML='Fetch '+symLabel+' Data Now'; return; }
 var dPrev = dayValues[1]; // Yesterday's completed candle
 var dPrevKey = dPrev.datetime.substring(0,10);
@@ -1946,6 +1958,7 @@ var ncd = S.nyCandleDebug;
 html += '<div style="font-family:var(--font-mono);font-size:9px;color:'+(ncd.usedFallback ? 'var(--bear)' : 'var(--bull)')+';background:rgba(0,0,0,0.3);border-radius:6px;padding:8px 10px;margin-bottom:12px;line-height:1.6;">' +
 'NY CANDLE REBUILD: ' + (ncd.usedFallback ? 'FALLBACK USED (raw TwelveData daily)' : 'OK (self-built from hourly)') + '<br>' +
 'Hourly bars received: ' + ncd.hourlyBarsReceived + ' | NY sessions built: ' + ncd.nySessionsBuilt + ' | Reliable (15+ bars): ' + (ncd.reliableSessions != null ? ncd.reliableSessions : '--') + '<br>' +
+(ncd.skippedThinDays ? 'Skipped ' + ncd.skippedThinDays + ' thin day(s) to find reliable "yesterday"<br>' : '') +
 'Hourly fetch status: ' + ncd.hourlyStatus + (ncd.hourlyError ? ' -- ' + ncd.hourlyError : '') +
 (ncd.thinSessions && ncd.thinSessions.length ? '<br>Thin/rejected sessions: ' + ncd.thinSessions.join(', ') : '') +
 '</div>';

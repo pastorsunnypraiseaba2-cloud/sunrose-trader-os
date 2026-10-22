@@ -1337,7 +1337,7 @@ data = JSON.parse(rawText);
 var snippet = rawText.substring(0, 300).replace(/</g, '<').replace(/>/g, '>');
 throw new Error('The Sunrose service returned an unexpected response (HTTP ' + res.status + '). Please try again shortly.');
 }
-if (data.error) throw new Error('Service: ' + (data.error.message || JSON.stringify(data.error)));
+if (data.error) throw new Error(((res.status === 403 || res.status === 429) ? '' : 'Service: ') + (data.error.message || JSON.stringify(data.error)));
 if (!data.content) throw new Error('Relay returned no content. Response: ' + JSON.stringify(data).substring(0, 200));
 return data;
 }

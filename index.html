@@ -583,6 +583,13 @@ textarea { resize: vertical; min-height: 70px; }
       <div style="margin-bottom:14px;"><input type="password" id="auth-pass" placeholder="Password (min 6 characters)" autocomplete="current-password" style="width:100%;"></div>
       <button id="auth-btn" onclick="sbSubmit()" style="width:100%;padding:12px;border-radius:var(--r2);background:var(--gold);color:#000;border:none;font-weight:700;font-size:13px;cursor:pointer;">Log in</button>
       <div id="auth-msg" style="font-size:12px;margin-top:12px;line-height:1.5;color:var(--t2);"></div>
+      <div id="pay-box" style="display:none;margin-top:14px;">
+        <div style="font-size:12px;color:var(--t2);line-height:1.6;margin-bottom:12px;">Choose a plan to continue using Sunrose Trader OS. Payment is processed securely by Paystack.</div>
+        <button onclick="sbPay('monthly')" style="width:100%;padding:12px;border-radius:var(--r2);background:var(--surface2);color:var(--t1);border:1px solid var(--gold-border);font-weight:700;font-size:13px;cursor:pointer;margin-bottom:10px;">Monthly &middot; &#8358;39,500 / month</button>
+        <button onclick="sbPay('yearly')" style="width:100%;padding:12px;border-radius:var(--r2);background:var(--gold);color:#000;border:none;font-weight:700;font-size:13px;cursor:pointer;">Yearly &middot; &#8358;330,000 / year <span style="font-weight:600;">(save &#8358;144,000)</span></button>
+        <div style="font-size:10px;color:var(--t3);margin-top:10px;line-height:1.5;">Renews automatically. Cancel any time from the Membership card. <a href="https://sunrosetechnologies.com/refund-policy.html" target="_blank" rel="noopener" style="color:var(--cyan);">Refund Policy</a></div>
+        <div style="margin-top:12px;text-align:center;font-size:12px;"><a onclick="sbSignOut()" style="color:var(--t3);cursor:pointer;">Sign out</a></div>
+      </div>
       <div style="display:flex;justify-content:space-between;margin-top:14px;font-size:12px;">
         <a id="auth-toggle" onclick="sbToggleMode()" style="color:var(--cyan);cursor:pointer;">Create an account</a>
         <a onclick="sbForgot()" style="color:var(--t3);cursor:pointer;">Forgot password?</a>
@@ -1233,6 +1240,12 @@ textarea { resize: vertical; min-height: 70px; }
       <div class="cq-text" id="strat-quote-text">"A continuation trade is not the beginning of a trend -- it is the institutional decision to continue an existing trend after removing liquidity."</div>
       <div class="cq-source" id="strat-quote-source">— THE SUNROSE CONTINUATION STRATEGY</div>
     </div>
+  </div>
+
+  <div class="card" id="membership-card">
+    <div class="card-header"><div class="card-title card-title-gold">Membership</div></div>
+    <div id="mem-status" style="font-size:12px;color:var(--t2);line-height:1.7;">Loading&hellip;</div>
+    <div id="mem-actions" style="display:flex;flex-direction:column;gap:10px;margin-top:12px;"></div>
   </div>
 
   <div class="card">
@@ -7242,7 +7255,7 @@ S.brain = { verdict: 'NO DATA', verdictColor: 'dim', direction: 'NONE', scenario
           email: email, password: pass,
           options: { data: { full_name: name }, emailRedirectTo: window.location.origin + window.location.pathname }
         });
-        if (r.error) { msg(/database error|EARLY_ACCESS_FULL/i.test(r.error.message) ? 'Early access is full (30 members). Please check back for the official launch in January 2027.' : r.error.message, 'err'); }
+        if (r.error) { msg(/database error|EARLY_ACCESS_FULL/i.test(r.error.message) ? 'Early access is full. New sign-ups open at our official launch on 1 December 2026.' : r.error.message, 'err'); }
         else if (r.data && r.data.session) { await checkAccess(); }
         else { msg('Account created. Check your email and tap the confirmation link, then come back and log in.', 'ok'); }
       } else {
@@ -7267,24 +7280,104 @@ S.brain = { verdict: 'NO DATA', verdictColor: 'dim', direction: 'NONE', scenario
     location.reload();
   };
 
-  async function checkAccess() {
+  var RELAY = 'https://sunrose-relay.vercel.app';
+  var PROF = null;
+  function fmtD(d) { return new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }); }
+  function daysLeft(d) { return Math.max(0, Math.ceil((new Date(d) - new Date()) / 86400000)); }
+  function accessInfo(prof) {
+    var now = new Date();
+    var paidEnd = prof.subscription_end ? new Date(prof.subscription_end) : null;
+    var paid = (paidEnd && paidEnd > now) || (prof.subscription_status === 'active' && !paidEnd);
+    var ea = prof.early_access_until ? new Date(prof.early_access_until) : null, tr = prof.trial_end ? new Date(prof.trial_end) : null;
+    var freeEnd = ea && (!tr || ea > tr) ? ea : tr;
+    var free = freeEnd && freeEnd > now;
+    return { active: !!(paid || free), paid: !!paid, trial: !!free && !paid, freeEnd: freeEnd, early: !!(ea && ea > now) };
+  }
+
+  function renderMembership(prof) {
+    var st = $('mem-status'), act = $('mem-actions');
+    if (!st || !act) return;
+    var a = accessInfo(prof), btn = function (label, fn, gold) {
+      return '<button onclick="' + fn + '" style="width:100%;padding:11px;border-radius:var(--r2);' + (gold ? 'background:var(--gold);color:#000;border:none;' : 'background:var(--surface2);color:var(--t1);border:1px solid var(--gold-border);') + 'font-weight:700;font-size:12px;cursor:pointer;">' + label + '</button>';
+    };
+    if (a.paid) {
+      var planName = prof.plan === 'yearly' ? 'Yearly' : prof.plan === 'monthly' ? 'Monthly' : 'Paid';
+      var end = prof.subscription_end ? fmtD(prof.subscription_end) : '';
+      var note = prof.subscription_status === 'cancelled' ? 'Cancelled. Your access continues until ' + end + '.'
+               : prof.subscription_status === 'past_due' ? 'Your last renewal payment failed. Please update your card to keep access after ' + end + '.'
+               : (end ? 'Renews around ' + end + '.' : 'Active.');
+      st.innerHTML = '<strong style="color:var(--bull);">' + planName + ' plan &middot; active</strong><br>' + note;
+      act.innerHTML = prof.paystack_subscription_code ? btn('Manage subscription (card / cancel)', 'sbManage()') : '';
+    } else if (a.trial) {
+      var dl = daysLeft(a.freeEnd);
+      st.innerHTML = '<strong style="color:var(--gold);">' + (a.early ? 'Early access' : 'Free trial') + ' &middot; ' + dl + ' day' + (dl === 1 ? '' : 's') + ' left</strong><br>Ends ' + fmtD(a.freeEnd) + '. Subscribe any time to continue without interruption.';
+      act.innerHTML = btn('Monthly &middot; &#8358;39,500 / month', "sbPay('monthly')") + btn('Yearly &middot; &#8358;330,000 / year (save &#8358;144,000)', "sbPay('yearly')", true);
+    } else {
+      st.innerHTML = 'No active membership.';
+      act.innerHTML = btn('Monthly &middot; &#8358;39,500 / month', "sbPay('monthly')") + btn('Yearly &middot; &#8358;330,000 / year', "sbPay('yearly')", true);
+    }
+  }
+
+  async function checkAccess(quiet) {
     var u = await sb.auth.getUser();
     var user = u && u.data && u.data.user;
-    if (!user) { showGate(); return; }
+    if (!user) { showGate(); return false; }
     var prof = null;
     for (var i = 0; i < 3 && !prof; i++) {
-      var q = await sb.from('profiles').select('trial_end,subscription_status').eq('id', user.id).maybeSingle();
+      var q = await sb.from('profiles').select('trial_end,early_access_until,subscription_status,plan,subscription_end,paystack_subscription_code').eq('id', user.id).maybeSingle();
       if (q.data) prof = q.data; else await new Promise(function (r) { setTimeout(r, 800); });
     }
-    if (!prof) { showGate(); msg('Could not load your account yet. Please refresh and try again.', 'err'); return; }
-    var active = prof.subscription_status === 'active' || (prof.trial_end && new Date(prof.trial_end) > new Date());
-    if (active) {
-      var el = $('acct-email'); if (el) el.textContent = user.email;
+    if (!prof) { showGate(); msg('Could not load your account yet. Please refresh and try again.', 'err'); return false; }
+    PROF = prof;
+    var el = $('acct-email'); if (el) el.textContent = user.email;
+    renderMembership(prof);
+    if (accessInfo(prof).active) {
+      $('pay-box').style.display = 'none';
       hideGate();
-    } else {
-      showGate();
-      msg('Your free access period has ended. Please contact Sunrose to continue.', 'err');
+      return true;
     }
+    showGate();
+    $('pay-box').style.display = 'block';
+    if (!quiet) msg('Your free access period has ended.', 'err');
+    return false;
+  }
+
+  window.sbPay = async function (plan) {
+    var tok = await window.sbGetToken();
+    if (!tok) { showGate(); msg('Please log in first.', 'err'); return; }
+    msg('Opening secure checkout&hellip;');
+    try {
+      var r = await fetch(RELAY + '/api/pay', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok }, body: JSON.stringify({ plan: plan }) });
+      var j = await r.json().catch(function () { return {}; });
+      if (r.ok && j.url) { location.href = j.url; return; }
+      var m = (j.error && j.error.message) || 'Could not start the payment. Please try again.';
+      msg(m, 'err'); alertIfHidden(m);
+    } catch (e) { msg('Could not reach the payment server. Check your connection and try again.', 'err'); alertIfHidden('Could not reach the payment server.'); }
+  };
+  window.sbManage = async function () {
+    var tok = await window.sbGetToken();
+    try {
+      var r = await fetch(RELAY + '/api/pay', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok }, body: JSON.stringify({ action: 'manage' }) });
+      var j = await r.json().catch(function () { return {}; });
+      if (r.ok && j.url) { location.href = j.url; return; }
+      alertIfHidden((j.error && j.error.message) || 'Could not open the subscription page.');
+    } catch (e) { alertIfHidden('Could not reach the payment server.'); }
+  };
+  function alertIfHidden(t) {
+    if ($('auth-gate').style.display === 'none') { var st = $('mem-status'); if (st) st.innerHTML += '<br><span style="color:var(--bear);">' + t + '</span>'; }
+  }
+
+  // Coming back from Paystack: wait for the payment confirmation to arrive
+  async function afterPayment() {
+    try { history.replaceState(null, '', location.pathname); } catch (e) {}
+    showGate(); $('pay-box').style.display = 'none';
+    msg('Payment received. Confirming your membership&hellip;', 'ok');
+    for (var i = 0; i < 15; i++) {
+      if (await checkAccess(true) && PROF && accessInfo(PROF).paid) { return; }
+      await new Promise(function (r) { setTimeout(r, 3000); });
+    }
+    await checkAccess(true);
+    if (!(PROF && accessInfo(PROF).paid)) msg('We are still confirming your payment. This can take a minute. Please refresh shortly. If it still does not unlock, email info@sunrosetechnologies.com.', 'err');
   }
 
   window.sbGetToken = async function () {
@@ -7293,7 +7386,8 @@ S.brain = { verdict: 'NO DATA', verdictColor: 'dim', direction: 'NONE', scenario
   };
 
   sb.auth.getSession().then(function (r) {
-    if (r.data && r.data.session) checkAccess(); else showGate();
+    if (!(r.data && r.data.session)) { showGate(); return; }
+    if (/[?&](paid=1|reference=)/.test(location.search)) afterPayment(); else checkAccess();
   });
 })();
 </script>

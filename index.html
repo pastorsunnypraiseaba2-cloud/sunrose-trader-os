@@ -4,6 +4,20 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Sunrose Trader OS</title>
+<!-- Meta Pixel Code -->
+<script>
+!function(f,b,e,v,n,t,s)
+{if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+n.queue=[];t=b.createElement(e);t.async=!0;
+t.src=v;s=b.getElementsByTagName(e)[0];
+s.parentNode.insertBefore(t,s)}(window, document,'script',
+'https://connect.facebook.net/en_US/fbevents.js');
+fbq('init', '1729691843976841');
+fbq('track', 'PageView');
+</script>
+<!-- End Meta Pixel Code -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -7245,8 +7259,11 @@ S.brain = { verdict: 'NO DATA', verdictColor: 'dim', direction: 'NONE', scenario
           options: { data: { full_name: name }, emailRedirectTo: window.location.origin + window.location.pathname }
         });
         if (r.error) { msg(/database error|EARLY_ACCESS_FULL/i.test(r.error.message) ? 'Early access is full. New sign-ups open at our official launch on 1 December 2026.' : r.error.message, 'err'); }
-        else if (r.data && r.data.session) { await checkAccess(); }
-        else { msg('Account created. Check your email and tap the confirmation link, then come back and log in.', 'ok'); }
+        else {
+          try { if (window.fbq) fbq('track', 'CompleteRegistration'); } catch (e) {}
+          if (r.data && r.data.session) { await checkAccess(); }
+          else { msg('Account created. Check your email and tap the confirmation link, then come back and log in.', 'ok'); }
+        }
       } else {
         var r2 = await sb.auth.signInWithPassword({ email: email, password: pass });
         if (r2.error) { msg(r2.error.message, 'err'); }

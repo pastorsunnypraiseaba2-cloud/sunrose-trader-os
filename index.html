@@ -586,7 +586,11 @@ textarea { resize: vertical; min-height: 70px; }
     <div style="text-align:center;margin-bottom:22px;">
       <div style="font-size:40px;margin-bottom:8px;">&#x2600;&#xFE0F;</div>
       <div style="font-family:var(--font-display);font-size:22px;font-weight:800;color:var(--gold);letter-spacing:1px;">SUNROSE TRADER OS</div>
-      <div style="font-family:var(--font-mono);font-size:10px;color:var(--t3);letter-spacing:2px;margin-top:6px;">EARLY ACCESS</div>
+      <div style="font-family:var(--font-mono);font-size:10px;color:var(--t3);letter-spacing:2px;margin-top:6px;">TRADE WITH CLARITY. TRADE WITH A PLAN.</div>
+    </div>
+    <div id="auth-pitch" style="display:none;text-align:center;margin-bottom:16px;padding:14px;border:1px solid var(--gold-border);border-radius:var(--r2);">
+      <div style="font-size:16px;font-weight:800;color:var(--gold);">Try it free for 7 days</div>
+      <div style="font-size:12px;color:var(--t2);margin-top:6px;line-height:1.6;">No payment needed to start. Create your account below and begin analysing your charts today.</div>
     </div>
     <div class="card" style="padding:18px;">
       <div id="auth-title" style="font-size:15px;font-weight:700;color:var(--t1);margin-bottom:14px;">Log in</div>
@@ -7234,13 +7238,20 @@ S.brain = { verdict: 'NO DATA', verdictColor: 'dim', direction: 'NONE', scenario
   }
   sb = window.supabase.createClient(SB_URL, SB_KEY);
 
-  window.sbToggleMode = function () {
-    mode = mode === 'login' ? 'signup' : 'login';
+  function setMode(m) {
+    mode = m;
     $('auth-title').textContent = mode === 'login' ? 'Log in' : 'Create your account';
-    $('auth-btn').textContent = mode === 'login' ? 'Log in' : 'Sign up';
+    $('auth-btn').textContent = mode === 'login' ? 'Log in' : 'Start my free trial';
     $('auth-toggle').textContent = mode === 'login' ? 'Create an account' : 'I already have an account';
     $('auth-name-wrap').style.display = mode === 'signup' ? 'block' : 'none';
     $('auth-pass').setAttribute('autocomplete', mode === 'login' ? 'current-password' : 'new-password');
+    var pitch = $('auth-pitch'); if (pitch) pitch.style.display = mode === 'signup' ? 'block' : 'none';
+  }
+  // Remember people who already have an account so they see Log in first; newcomers see Create your account.
+  function isKnown() { try { return localStorage.getItem('sros_member') === '1'; } catch (e) { return false; } }
+  function markKnown() { try { localStorage.setItem('sros_member', '1'); } catch (e) {} }
+  window.sbToggleMode = function () {
+    setMode(mode === 'login' ? 'signup' : 'login');
     msg('');
   };
 
@@ -7258,16 +7269,17 @@ S.brain = { verdict: 'NO DATA', verdictColor: 'dim', direction: 'NONE', scenario
           email: email, password: pass,
           options: { data: { full_name: name }, emailRedirectTo: window.location.origin + window.location.pathname }
         });
-        if (r.error) { msg(/database error|EARLY_ACCESS_FULL/i.test(r.error.message) ? 'Early access is full. New sign-ups open at our official launch on 1 December 2026.' : r.error.message, 'err'); }
+        if (r.error) { msg(/database error|EARLY_ACCESS_FULL/i.test(r.error.message) ? 'We could not create your account right now. Please try again in a moment, or email info@sunrosetechnologies.com.' : r.error.message, 'err'); }
         else {
           try { if (window.fbq) fbq('track', 'CompleteRegistration'); } catch (e) {}
+          markKnown(); setMode('login');
           if (r.data && r.data.session) { await checkAccess(); }
           else { msg('Account created. Check your email and tap the confirmation link, then come back and log in.', 'ok'); }
         }
       } else {
         var r2 = await sb.auth.signInWithPassword({ email: email, password: pass });
         if (r2.error) { msg(r2.error.message, 'err'); }
-        else { await checkAccess(); }
+        else { markKnown(); await checkAccess(); }
       }
     } catch (e) { msg('Something went wrong: ' + e.message, 'err'); }
     $('auth-btn').disabled = false;
@@ -7392,7 +7404,8 @@ S.brain = { verdict: 'NO DATA', verdictColor: 'dim', direction: 'NONE', scenario
   };
 
   sb.auth.getSession().then(function (r) {
-    if (!(r.data && r.data.session)) { showGate(); return; }
+    if (!(r.data && r.data.session)) { if (!isKnown()) setMode('signup'); showGate(); return; }
+    markKnown();
     if (/[?&](paid=1|reference=)/.test(location.search)) afterPayment(); else checkAccess();
   });
 })();

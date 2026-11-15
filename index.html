@@ -1261,6 +1261,17 @@ textarea { resize: vertical; min-height: 70px; }
       <div>Product: Sunrose Trader OS</div>
       <div>Version: 1.0 — Phase 1</div>
       <div id="acct-line" style="margin-top:8px;">Account: <span id="acct-email">-</span> &middot; <a onclick="sbSignOut()" style="color:var(--bear);cursor:pointer;">Sign out</a></div>
+      <div style="margin-top:10px;"><a onclick="sbDeleteOpen()" style="color:var(--t3);cursor:pointer;text-decoration:underline;font-size:11px;">Delete my account</a></div>
+      <div id="del-box" style="display:none;margin-top:12px;padding:14px;border:1px solid var(--bear);border-radius:var(--r2);background:rgba(239,68,68,0.06);">
+        <div style="font-size:12px;color:var(--t1);line-height:1.6;margin-bottom:10px;"><strong>Delete your account permanently?</strong><br>This removes your login, membership and usage history, and stops any subscription renewal. Days you have already paid for are not refunded automatically. This cannot be undone.</div>
+        <div style="font-size:11px;color:var(--t2);margin-bottom:6px;">Type <strong>DELETE</strong> to confirm:</div>
+        <input type="text" id="del-confirm" autocomplete="off" style="width:100%;margin-bottom:10px;">
+        <div style="display:flex;gap:8px;">
+          <button onclick="sbDeleteAccount()" id="del-btn" style="flex:1;padding:10px;border-radius:var(--r2);background:var(--bear);color:#fff;border:none;font-weight:700;font-size:12px;cursor:pointer;">Delete account</button>
+          <button onclick="document.getElementById('del-box').style.display='none'" style="flex:1;padding:10px;border-radius:var(--r2);background:var(--surface2);color:var(--t1);border:1px solid var(--border2);font-weight:700;font-size:12px;cursor:pointer;">Cancel</button>
+        </div>
+        <div id="del-msg" style="font-size:11px;margin-top:8px;color:var(--bear);"></div>
+      </div>
       <div>Asset: All currency pairs</div>
       <div>Methodology: Sunrose Continuation Strategy + SMC</div>
     </div>
@@ -7300,6 +7311,25 @@ S.brain = { verdict: 'NO DATA', verdictColor: 'dim', direction: 'NONE', scenario
 
   var RELAY = 'https://sunrose-relay.vercel.app';
   var PROF = null;
+  // STORE MODE: inside the Play Store (Android) app, nothing is sold in the app.
+  // Members subscribe on the website; the app only shows their membership status.
+  // Turned on automatically inside the Android app, or in a browser with ?store=1 (for testing; ?store=0 turns it off).
+  var STORE_MODE = (function () {
+    try {
+      var m = /[?&]store=([01])/.exec(location.search);
+      if (m) { localStorage.setItem('sros_store_mode', m[1]); }
+      if (localStorage.getItem('sros_store_mode') === '1') return true;
+      if (localStorage.getItem('sros_store_mode') === '0') return false;
+    } catch (e) {}
+    var C = window.Capacitor;
+    return !!(C && ((C.isNativePlatform && C.isNativePlatform()) || (C.getPlatform && C.getPlatform() !== 'web')));
+  })();
+  window.SUNROSE_STORE_MODE = STORE_MODE;
+  if (STORE_MODE) {
+    var pb = document.getElementById('pay-box');
+    if (pb) pb.innerHTML = '<div style="font-size:12px;color:var(--t2);line-height:1.6;margin-bottom:12px;">Your membership is not active.</div>' +
+      '<div style="margin-top:12px;text-align:center;font-size:12px;"><a onclick="sbSignOut()" style="color:var(--t3);cursor:pointer;">Sign out</a></div>';
+  }
   function fmtD(d) { return new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }); }
   function daysLeft(d) { return Math.max(0, Math.ceil((new Date(d) - new Date()) / 86400000)); }
   function accessInfo(prof) {
@@ -7322,17 +7352,17 @@ S.brain = { verdict: 'NO DATA', verdictColor: 'dim', direction: 'NONE', scenario
       var planName = prof.plan === 'yearly' ? 'Yearly' : prof.plan === 'monthly' ? 'Monthly' : 'Paid';
       var end = prof.subscription_end ? fmtD(prof.subscription_end) : '';
       var note = prof.subscription_status === 'cancelled' ? 'Cancelled. Your access continues until ' + end + '.'
-               : prof.subscription_status === 'past_due' ? 'Your last renewal payment failed. Please update your card to keep access after ' + end + '.'
+               : prof.subscription_status === 'past_due' ? (STORE_MODE ? 'Your last renewal did not go through. Access continues until ' + end + '.' : 'Your last renewal payment failed. Please update your card to keep access after ' + end + '.')
                : (end ? 'Renews around ' + end + '.' : 'Active.');
       st.innerHTML = '<strong style="color:var(--bull);">' + planName + ' plan &middot; active</strong><br>' + note;
-      act.innerHTML = prof.paystack_subscription_code ? btn('Manage subscription (card / cancel)', 'sbManage()') : '';
+      act.innerHTML = (prof.paystack_subscription_code && !STORE_MODE) ? btn('Manage subscription (card / cancel)', 'sbManage()') : '';
     } else if (a.trial) {
       var dl = daysLeft(a.freeEnd);
-      st.innerHTML = '<strong style="color:var(--gold);">' + (a.early ? 'Early access' : 'Free trial') + ' &middot; ' + dl + ' day' + (dl === 1 ? '' : 's') + ' left</strong><br>Ends ' + fmtD(a.freeEnd) + '. Subscribe any time to continue without interruption.';
-      act.innerHTML = btn('Monthly &middot; &#8358;39,500 / month', "sbPay('monthly')") + btn('Yearly &middot; &#8358;330,000 / year (save &#8358;144,000)', "sbPay('yearly')", true);
+      st.innerHTML = '<strong style="color:var(--gold);">' + (a.early ? 'Early access' : 'Free trial') + ' &middot; ' + dl + ' day' + (dl === 1 ? '' : 's') + ' left</strong><br>Ends ' + fmtD(a.freeEnd) + (STORE_MODE ? '.' : '. Subscribe any time to continue without interruption.');
+      act.innerHTML = STORE_MODE ? '' : btn('Monthly &middot; &#8358;39,500 / month', "sbPay('monthly')") + btn('Yearly &middot; &#8358;330,000 / year (save &#8358;144,000)', "sbPay('yearly')", true);
     } else {
       st.innerHTML = 'No active membership.';
-      act.innerHTML = btn('Monthly &middot; &#8358;39,500 / month', "sbPay('monthly')") + btn('Yearly &middot; &#8358;330,000 / year', "sbPay('yearly')", true);
+      act.innerHTML = STORE_MODE ? '' : btn('Monthly &middot; &#8358;39,500 / month', "sbPay('monthly')") + btn('Yearly &middot; &#8358;330,000 / year', "sbPay('yearly')", true);
     }
   }
 
@@ -7356,11 +7386,12 @@ S.brain = { verdict: 'NO DATA', verdictColor: 'dim', direction: 'NONE', scenario
     }
     showGate();
     $('pay-box').style.display = 'block';
-    if (!quiet) msg('Your free access period has ended.', 'err');
+    if (!quiet) msg(STORE_MODE ? 'Your membership is not active.' : 'Your free access period has ended.', 'err');
     return false;
   }
 
   window.sbPay = async function (plan) {
+    if (STORE_MODE) return;
     var tok = await window.sbGetToken();
     if (!tok) { showGate(); msg('Please log in first.', 'err'); return; }
     msg('Opening secure checkout&hellip;');
@@ -7372,7 +7403,33 @@ S.brain = { verdict: 'NO DATA', verdictColor: 'dim', direction: 'NONE', scenario
       msg(m, 'err'); alertIfHidden(m);
     } catch (e) { msg('Could not reach the payment server. Check your connection and try again.', 'err'); alertIfHidden('Could not reach the payment server.'); }
   };
+  window.sbDeleteOpen = function () {
+    var b = document.getElementById('del-box'); if (!b) return;
+    b.style.display = b.style.display === 'none' ? 'block' : 'none';
+    var i = document.getElementById('del-confirm'); if (i) i.value = '';
+    var m = document.getElementById('del-msg'); if (m) m.textContent = '';
+  };
+  window.sbDeleteAccount = async function () {
+    var m = document.getElementById('del-msg'), btn = document.getElementById('del-btn');
+    if ((document.getElementById('del-confirm').value || '').trim() !== 'DELETE') { m.textContent = 'Please type DELETE in capital letters to confirm.'; return; }
+    var tok = await window.sbGetToken();
+    if (!tok) { m.textContent = 'Please log in again first.'; return; }
+    btn.disabled = true; btn.textContent = 'Deleting...';
+    try {
+      var r = await fetch(RELAY + '/api/delete-account', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok }, body: JSON.stringify({ confirm: 'DELETE' }) });
+      var j = await r.json().catch(function () { return {}; });
+      if (r.ok) {
+        try { await sb.auth.signOut(); } catch (e) {}
+        document.body.innerHTML = '<div style="max-width:420px;margin:80px auto;padding:24px;text-align:center;color:#e5e7eb;font-family:sans-serif;line-height:1.6;"><h2 style="margin-bottom:10px;">Your account has been deleted</h2><p>Your login and data have been removed. Thank you for using Sunrose Trader OS.</p></div>';
+        return;
+      }
+      m.textContent = (j.error && j.error.message) || 'Could not delete your account. Please try again.';
+    } catch (e) { m.textContent = 'Could not reach the server. Check your connection and try again.'; }
+    btn.disabled = false; btn.textContent = 'Delete account';
+  };
+
   window.sbManage = async function () {
+    if (STORE_MODE) return;
     var tok = await window.sbGetToken();
     try {
       var r = await fetch(RELAY + '/api/pay', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok }, body: JSON.stringify({ action: 'manage' }) });

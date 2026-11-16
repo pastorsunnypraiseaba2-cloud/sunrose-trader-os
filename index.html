@@ -7447,12 +7447,25 @@ S.brain = { verdict: 'NO DATA', verdictColor: 'dim', direction: 'NONE', scenario
   }
 
   // Coming back from Paystack: wait for the payment confirmation to arrive
+  // Tell the Facebook pixel about a confirmed payment (once per payment), so ads can find people who pay
+  function trackPurchase(ref) {
+    try {
+      if (!window.fbq || !PROF) return;
+      var key = 'sros_purchase_' + (ref || PROF.subscription_end || '');
+      if (localStorage.getItem(key)) return;
+      var yearly = PROF.plan === 'yearly';
+      fbq('track', 'Purchase', { value: yearly ? 330000 : 39500, currency: 'NGN', content_name: yearly ? 'Sunrose Trader OS Yearly' : 'Sunrose Trader OS Monthly' }, ref ? { eventID: ref } : undefined);
+      localStorage.setItem(key, '1');
+    } catch (e) {}
+  }
+
   async function afterPayment() {
+    var payRef = ''; try { payRef = new URLSearchParams(location.search).get('reference') || ''; } catch (e) {}
     try { history.replaceState(null, '', location.pathname); } catch (e) {}
     showGate(); $('pay-box').style.display = 'none';
     msg('Payment received. Confirming your membership&hellip;', 'ok');
     for (var i = 0; i < 15; i++) {
-      if (await checkAccess(true) && PROF && accessInfo(PROF).paid) { return; }
+      if (await checkAccess(true) && PROF && accessInfo(PROF).paid) { trackPurchase(payRef); return; }
       await new Promise(function (r) { setTimeout(r, 3000); });
     }
     await checkAccess(true);
